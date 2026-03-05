@@ -3,10 +3,30 @@
         "height": 4300,
         "width": 2
     },
-    "activeFile": "",
+    "activeFile": "lvl-01.tmx",
     "expandedProjectPaths": [
+        "."
     ],
     "fileStates": {
+        "Terrain (16x16).tsx": {
+            "dynamicWrapping": false
+        },
+        "lvl-01.tmx": {
+            "expandedObjectLayers": [
+                4
+            ],
+            "scale": 0.6714,
+            "selectedLayer": 0,
+            "viewCenter": {
+                "x": 328.4182305630027,
+                "y": 425.9755734286565
+            }
+        },
+        "pixel_adventure.tsx": {
+            "dynamicWrapping": false,
+            "scaleInDock": 0.8715,
+            "scaleInEditor": 1
+        }
     },
     "last.imagePath": "/Users/qasim/Documents/flame/assets/images/Terrain",
     "map.height": 23,
@@ -15,9 +35,13 @@
     "map.tileWidth": 16,
     "map.width": 40,
     "openFiles": [
+        "pixel_adventure.tsx",
+        "lvl-01.tmx"
     ],
     "project": "untitled.tiled-project",
     "recentFiles": [
+        "pixel_adventure.tsx",
+        "lvl-01.tmx"
     ],
     "tileset.lastUsedFormat": "tsx",
     "tileset.tileSize": {
