@@ -1,58 +1,63 @@
 import 'package:flame/components.dart';
-import 'package:flame_app/main.dart';
+import 'package:flame_app/game/my_game.dart';
+import 'package:flame_app/actor/player_state.dart';
+import 'package:flame_app/actor/player_direction.dart';
+import 'package:flame_app/actor/player_character.dart';
+import 'package:flutter/services.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PLAYER – character component
-// Logic: knows which animation to show per state (idle, run, jump, etc.),
-// loads sprites for the chosen character, builds animations. Position and
-// character come from the constructor (Level sets them when spawning).
-// Movement / input logic would go in update() or input handlers later.
+// PLAYER
+//
+// Concepts used (see CONCEPTS.md for details):
+//   position  – where the player is (x, y in pixels). We change it each frame with velocity.
+//   velocity  – speed per second (x = horizontal, y = vertical). Input and gravity change it.
+//   gravity   – downward acceleration; we add it to velocity.y each frame so the player falls.
+//   groundY   – y-coordinate of the floor; when position.y >= groundY we "land" and set velocity.y = 0.
+//   direction – left/right; we use it to set scale.x (1 or -1) so the sprite faces the right way.
+//   scale.x   – 1 = face right, -1 = face left (flip sprite).
+//   dt        – time since last frame in seconds; we use it so movement is "per second".
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Which animation to show. Set [Player.current] to this (e.g. when moving → running).
-enum PlayerState {
-  idle,
-  running,
-  jumping,
-  falling,
-  doubleJump,
-  hit,
-  wallJump,
-  dead,
-}
-
-/// Preset character folders under assets/images/. Pass in constructor to pick sprite set.
-enum PlayerCharacter {
-  ninjaFrog('Main Characters/Ninja Frog'),
-  pinkMan('Main Characters/Pink Man'),
-  virtualGuy('Main Characters/Virtual Guy'),
-  maskDude('Main Characters/Mask Dude');
-
-  const PlayerCharacter(this.path);
-  final String path;
-}
-
-/// Player = one of several sprite animations (idle, run, jump, ...). Switches by [current].
-/// HasGameRef<MyGame> = access to game (e.g. gameRef.images to load/cache sprites).
 class Player extends SpriteAnimationGroupComponent with HasGameRef<MyGame> {
   Player({
     Vector2? position,
     PlayerCharacter character = PlayerCharacter.ninjaFrog,
     this.textureSize = 32,
     this.stepTime = 0.5,
+    this.gravity = 800,
+    this.moveSpeed = 200,
+    this.jumpSpeed = -380,
   })  : _basePath = character.path,
         super(position: position ?? Vector2.zero());
 
+  // ─── Animation / sprite settings (set once) ─────────────────────────────
   final String _basePath;
   final double textureSize;
   final double stepTime;
 
-  /// Runs once when the player is added to the level. Loads sprites and builds all animations.
+  // ─── Movement settings (tunable numbers) ───────────────────────────────
+  /// Downward acceleration in pixels per second². Added to velocity.y every frame.
+  final double gravity;
+  /// Horizontal speed in pixels per second when holding left/right.
+  final double moveSpeed;
+  /// Upward speed in pixels per second when jump is pressed (stored as negative = up).
+  final double jumpSpeed;
+
+  // ─── State that changes every frame ─────────────────────────────────────
+  /// Current speed: .x = horizontal (px/s), .y = vertical (px/s). We add velocity * dt to position each frame.
+  Vector2 velocity = Vector2.zero();
+  /// Which way the sprite faces; we set scale.x from this (1 = right, -1 = left).
+  PlayerDirection direction = PlayerDirection.right;
+  /// Y-coordinate of the floor in pixels. When position.y >= groundY we clamp and set velocity.y = 0.
+  double? groundY;
+
+  /// True when velocity.y >= 0 (not moving up). We only allow jump when this is true.
+  bool get isOnGround => velocity.y >= 0;
+
   @override
   Future<void> onLoad() async {
     await super.onLoad();
 
-    // --- Data: which state uses which sprite file and how many frames ---
     const animationData = {
       PlayerState.idle: ('Idle (32x32).png', 11),
       PlayerState.running: ('Run (32x32).png', 12),
@@ -64,13 +69,11 @@ class Player extends SpriteAnimationGroupComponent with HasGameRef<MyGame> {
       PlayerState.dead: ('Hit (32x32).png', 7),
     };
 
-    // --- Load sprite sheets into cache (must happen before fromCache) ---
     final files = animationData.values.map((e) => e.$1).toSet();
     for (final file in files) {
       await gameRef.images.load('$_basePath/$file');
     }
 
-    // --- Build one SpriteAnimation per state and assign to [animations] map ---
     animations = {
       for (final e in animationData.entries)
         e.key: buildSequenceAnimation(
@@ -82,10 +85,85 @@ class Player extends SpriteAnimationGroupComponent with HasGameRef<MyGame> {
     };
 
     current = PlayerState.idle;
+    anchor = Anchor.bottomCenter;
   }
 
-  /// Generic helper: one sprite sheet (row of frames) → one SpriteAnimation.
-  /// Used for every state; reusable for other characters or sprites.
+  @override
+  void update(double dt) {
+    super.update(dt);
+
+    if (current == PlayerState.dead) return;
+
+    _applyInput();
+    _applyGravity(dt);
+    _applyMovement(dt);
+    _applyGround();
+    _updateDirection();
+    _updateAnimationState();
+  }
+
+  /// Set velocity.x and direction from keyboard (left/right, jump).
+  void _applyInput() {
+    final keys = HardwareKeyboard.instance.logicalKeysPressed;
+    final moveLeft = keys.contains(LogicalKeyboardKey.arrowLeft) ||
+        keys.contains(LogicalKeyboardKey.keyA);
+    final moveRight = keys.contains(LogicalKeyboardKey.arrowRight) ||
+        keys.contains(LogicalKeyboardKey.keyD);
+    final jump = keys.contains(LogicalKeyboardKey.space) ||
+        keys.contains(LogicalKeyboardKey.arrowUp) ||
+        keys.contains(LogicalKeyboardKey.keyW);
+
+    if (moveLeft) {
+      velocity.x = -moveSpeed;
+      direction = PlayerDirection.left;
+    } else if (moveRight) {
+      velocity.x = moveSpeed;
+      direction = PlayerDirection.right;
+    } else {
+      velocity.x = 0;
+    }
+
+    if (jump && isOnGround) {
+      velocity.y = jumpSpeed;
+    }
+  }
+
+  /// Add gravity to velocity.y so the player accelerates downward.
+  void _applyGravity(double dt) {
+    velocity.y += gravity * dt;
+  }
+
+  /// Move position by velocity * dt (so movement is per second).
+  void _applyMovement(double dt) {
+    position += velocity * dt;
+  }
+
+  /// If we have a floor (groundY), clamp position and stop vertical velocity when we hit it.
+  void _applyGround() {
+    if (groundY != null && position.y >= groundY!) {
+      position.y = groundY!;
+      velocity.y = 0;
+    }
+  }
+
+  /// Flip sprite left/right using scale.x from direction.
+  void _updateDirection() {
+    scale.x = direction == PlayerDirection.right ? 1 : -1;
+  }
+
+  /// Set current animation (idle / running / jumping / falling) from velocity.
+  void _updateAnimationState() {
+    if (velocity.y < 0) {
+      current = PlayerState.jumping;
+    } else if (velocity.y > 0) {
+      current = PlayerState.falling;
+    } else if (velocity.x != 0) {
+      current = PlayerState.running;
+    } else {
+      current = PlayerState.idle;
+    }
+  }
+
   SpriteAnimation buildSequenceAnimation({
     required String path,
     required int amount,
