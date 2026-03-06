@@ -1,5 +1,21 @@
 # Game Architecture – What Each Part Does
 
+## File structure (one component per file)
+
+See **CONCEPTS.md** for what position, velocity, gravity, Vector2, scale, groundY, etc. mean and how they are used.
+
+| File | Contains |
+|------|----------|
+| **lib/main.dart** | App entry: `main()`, fullscreen/landscape, `runApp(GameWidget(game: MyGame()))`. |
+| **lib/game/my_game.dart** | `MyGame` (FlameGame), `createWorldAndCamera()`, `worldAndCamera`, `startLevelId`. |
+| **lib/levels/level.dart** | `Level` (World): loads Tiled map, spawns Player from object layer. |
+| **lib/actor/player.dart** | `Player` component: movement, gravity, input, animations. |
+| **lib/actor/player_state.dart** | `PlayerState` enum (idle, running, jumping, etc.). |
+| **lib/actor/player_direction.dart** | `PlayerDirection` enum (left, right). |
+| **lib/actor/player_character.dart** | `PlayerCharacter` enum (ninjaFrog, pinkMan, etc.). |
+
+---
+
 ## High-level flow
 
 ```
@@ -16,27 +32,28 @@ main()  →  GameWidget(game: MyGame())
 
 ---
 
-## 1. `main.dart` – App entry and game root
+## 1. `main.dart` – App entry only
 
 | What | Role |
 |------|------|
 | **main()** | Starts the app: initializes Flutter, sets fullscreen/landscape on mobile, runs the game via `GameWidget(game: MyGame())`. |
-| **GameWidget** | Flutter widget that hosts the game. Handles resize, input, and calls into `MyGame` every frame. |
-| **MyGame** | Root game class. Owns the **camera** and the **world** (your level). Runs the game loop (update, render). |
 
-**MyGame responsibilities**
-
-- Create **world** (Level) and **camera** once, before the first frame (so the camera is never “uninitialized”).
-- Load all images into the cache in `onLoad()` so any component can use them.
-- Set camera viewfinder anchor (e.g. top-left) so (0,0) is where you expect.
-
-**Why camera + world are `static final`**
-
-- Flame’s first layout reads `camera` before `onLoad()` runs. If camera was created in `onLoad()`, you’d get “camera has not been initialized”. Creating them as static fields and passing them into `super(world: ..., camera: ...)` guarantees they exist from frame 1.
+`MyGame` and game setup live in **lib/game/my_game.dart**.
 
 ---
 
-## 2. `levels/level.dart` – One level (map + entities)
+## 2. `game/my_game.dart` – Root game (FlameGame)
+
+| What | Role |
+|------|------|
+| **startLevelId** | Which level to load (e.g. 'lvl-01'). |
+| **createWorldAndCamera()** | Builds one Level and one Camera viewing it. |
+| **worldAndCamera** | Result of createWorldAndCamera, used once by MyGame. |
+| **MyGame** | Root game class. Passes world and camera to FlameGame, loads images in onLoad(), sets camera anchor. |
+
+---
+
+## 3. `levels/level.dart` – One level (map + entities)
 
 | What | Role |
 |------|------|
@@ -57,7 +74,7 @@ main()  →  GameWidget(game: MyGame())
 
 ---
 
-## 3. `actor/player.dart` – The player character
+## 4. `actor/player.dart` – The player character
 
 | What | Role |
 |------|------|
@@ -79,7 +96,18 @@ main()  →  GameWidget(game: MyGame())
 
 ---
 
-## 4. Flame component types (quick reference)
+## 5. `actor/player_*.dart` – Player enums (state, direction, character)
+
+| File | Role |
+|------|------|
+| **player_state.dart** | `PlayerState` enum: which animation (idle, run, jump, fall, etc.). |
+| **player_direction.dart** | `PlayerDirection` enum: left / right (for sprite flip). |
+| **player_character.dart** | `PlayerCharacter` enum: which sprite set (Ninja Frog, Pink Man, etc.). |
+| **player.dart** | `Player` component: position, velocity, gravity, input, animations. |
+
+---
+
+## 6. Flame component types (quick reference)
 
 | Component | Purpose |
 |-----------|--------|
@@ -92,7 +120,7 @@ main()  →  GameWidget(game: MyGame())
 
 ---
 
-## 5. Where to put new logic
+## 7. Where to put new logic
 
 - **New level / new map** – New class like `Level` (or same class with different map path), load different `.tmx`, add to world.
 - **New spawn type** – In Level’s object loop, add another `case 'Enemy': add(Enemy(position: ...));`.
