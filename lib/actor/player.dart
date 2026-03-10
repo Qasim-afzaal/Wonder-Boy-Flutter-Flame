@@ -1,91 +1,78 @@
 import 'package:flame/components.dart';
+import 'package:flame/collisions.dart';
 import 'package:flame_app/game/my_game.dart';
+import 'package:flame_app/levels/goal.dart';
 import 'package:flame_app/actor/player_state.dart';
 import 'package:flame_app/actor/player_direction.dart';
-import 'package:flame_app/actor/player_character.dart';
+import 'package:flame_app/actor/character.dart';
 import 'package:flutter/services.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PLAYER
+// PLAYER – movement and input logic only
 //
-// Concepts used (see CONCEPTS.md for details):
-//   position  – where the player is (x, y in pixels). We change it each frame with velocity.
-//   velocity  – speed per second (x = horizontal, y = vertical). Input and gravity change it.
-//   gravity   – downward acceleration; we add it to velocity.y each frame so the player falls.
-//   groundY   – y-coordinate of the floor; when position.y >= groundY we "land" and set velocity.y = 0.
-//   direction – left/right; we use it to set scale.x (1 or -1) so the sprite faces the right way.
-//   scale.x   – 1 = face right, -1 = face left (flip sprite).
-//   dt        – time since last frame in seconds; we use it so movement is "per second".
+// What it does: position, velocity, gravity, input, ground, direction, which
+// animation state to show. It does NOT know sprite paths or frame counts;
+// that lives in [Character]. We take a [Character] and use it in onLoad() to
+// get the animations, then we only update position/velocity/current.
+//
+// Concepts: position, velocity, gravity, groundY, direction, dt (see CONCEPTS.md).
 // ═══════════════════════════════════════════════════════════════════════════
 
-class Player extends SpriteAnimationGroupComponent with HasGameRef<MyGame> {
+class Player extends SpriteAnimationGroupComponent
+    with HasGameReference<MyGame>, CollisionCallbacks {
   Player({
     Vector2? position,
-    PlayerCharacter character = PlayerCharacter.ninjaFrog,
-    this.textureSize = 32,
-    this.stepTime = 0.5,
+    Character? character,
     this.gravity = 800,
     this.moveSpeed = 200,
     this.jumpSpeed = -380,
-  })  : _basePath = character.path,
-        super(position: position ?? Vector2.zero());
+    this.maxAirJumps = 1,
+  })  : _character = character ?? Character.ninjaFrog(),
+        super(
+          position: position ?? Vector2.zero(),
+          size: Vector2(32, 32),
+          anchor: Anchor.bottomCenter,
+        );
 
-  // ─── Animation / sprite settings (set once) ─────────────────────────────
-  final String _basePath;
-  final double textureSize;
-  final double stepTime;
+  /// Which character to draw (sprites, animations). Logic is in this class; look is in Character.
+  final Character _character;
 
-  // ─── Movement settings (tunable numbers) ───────────────────────────────
-  /// Downward acceleration in pixels per second². Added to velocity.y every frame.
+  // ─── Movement settings ──────────────────────────────────────────────────
   final double gravity;
-  /// Horizontal speed in pixels per second when holding left/right.
   final double moveSpeed;
-  /// Upward speed in pixels per second when jump is pressed (stored as negative = up).
   final double jumpSpeed;
+  final int maxAirJumps;
 
-  // ─── State that changes every frame ─────────────────────────────────────
-  /// Current speed: .x = horizontal (px/s), .y = vertical (px/s). We add velocity * dt to position each frame.
+  // ─── State (changes every frame) ────────────────────────────────────────
   Vector2 velocity = Vector2.zero();
-  /// Which way the sprite faces; we set scale.x from this (1 = right, -1 = left).
   PlayerDirection direction = PlayerDirection.right;
-  /// Y-coordinate of the floor in pixels. When position.y >= groundY we clamp and set velocity.y = 0.
   double? groundY;
+  int _airJumpsUsed = 0;
+  bool _onGroundLastFrame = false;
+  double _hitInvincibleUntil = 0;
+  Vector2? _spawnPosition;
 
-  /// True when velocity.y >= 0 (not moving up). We only allow jump when this is true.
-  bool get isOnGround => velocity.y >= 0;
+  bool get isOnGround => groundY != null && position.y >= groundY! - 1;
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
 
-    const animationData = {
-      PlayerState.idle: ('Idle (32x32).png', 11),
-      PlayerState.running: ('Run (32x32).png', 12),
-      PlayerState.jumping: ('Jump (32x32).png', 1),
-      PlayerState.falling: ('Fall (32x32).png', 1),
-      PlayerState.doubleJump: ('Double Jump (32x32).png', 6),
-      PlayerState.hit: ('Hit (32x32).png', 7),
-      PlayerState.wallJump: ('Wall Jump (32x32).png', 6),
-      PlayerState.dead: ('Hit (32x32).png', 7),
-    };
-
-    final files = animationData.values.map((e) => e.$1).toSet();
-    for (final file in files) {
-      await gameRef.images.load('$_basePath/$file');
-    }
-
-    animations = {
-      for (final e in animationData.entries)
-        e.key: buildSequenceAnimation(
-          path: '$_basePath/${e.value.$1}',
-          amount: e.value.$2,
-          stepTime: stepTime,
-          textureSize: textureSize,
-        ),
-    };
+    await _character.loadImages(game.images);
+    animations = _character.buildAnimations(game.images);
 
     current = PlayerState.idle;
     anchor = Anchor.bottomCenter;
+    _spawnPosition = position.clone();
+    add(RectangleHitbox());
+  }
+
+  @override
+  void onCollisionStart(Set<Vector2> intersectionPoints, PositionComponent other) {
+    super.onCollisionStart(intersectionPoints, other);
+    if (other is Goal) {
+      game.loadNextLevel();
+    }
   }
 
   @override
@@ -98,11 +85,16 @@ class Player extends SpriteAnimationGroupComponent with HasGameRef<MyGame> {
     _applyGravity(dt);
     _applyMovement(dt);
     _applyGround();
+    if (_hitInvincibleUntil > 0) _hitInvincibleUntil -= dt;
+    // Fall off map -> die and respawn
+    if (groundY != null && position.y > groundY! + 200) {
+      die();
+    }
     _updateDirection();
     _updateAnimationState();
+    _onGroundLastFrame = isOnGround;
   }
 
-  /// Set velocity.x and direction from keyboard (left/right, jump).
   void _applyInput() {
     final keys = HardwareKeyboard.instance.logicalKeysPressed;
     final moveLeft = keys.contains(LogicalKeyboardKey.arrowLeft) ||
@@ -123,37 +115,42 @@ class Player extends SpriteAnimationGroupComponent with HasGameRef<MyGame> {
       velocity.x = 0;
     }
 
-    if (jump && isOnGround) {
-      velocity.y = jumpSpeed;
+    final canJump = isOnGround || (_airJumpsUsed < maxAirJumps && !_onGroundLastFrame);
+    if (jump && canJump) {
+      if (isOnGround) {
+        _airJumpsUsed = 0;
+        velocity.y = jumpSpeed;
+      } else {
+        _airJumpsUsed++;
+        velocity.y = jumpSpeed;
+        current = PlayerState.doubleJump;
+      }
     }
   }
 
-  /// Add gravity to velocity.y so the player accelerates downward.
   void _applyGravity(double dt) {
     velocity.y += gravity * dt;
   }
 
-  /// Move position by velocity * dt (so movement is per second).
   void _applyMovement(double dt) {
     position += velocity * dt;
   }
 
-  /// If we have a floor (groundY), clamp position and stop vertical velocity when we hit it.
   void _applyGround() {
     if (groundY != null && position.y >= groundY!) {
       position.y = groundY!;
       velocity.y = 0;
+      if (_onGroundLastFrame) _airJumpsUsed = 0;
     }
   }
 
-  /// Flip sprite left/right using scale.x from direction.
   void _updateDirection() {
     scale.x = direction == PlayerDirection.right ? 1 : -1;
   }
 
-  /// Set current animation (idle / running / jumping / falling) from velocity.
   void _updateAnimationState() {
-    if (velocity.y < 0) {
+    if (current == PlayerState.hit || current == PlayerState.dead) return;
+    if (velocity.y < 0 && current != PlayerState.doubleJump) {
       current = PlayerState.jumping;
     } else if (velocity.y > 0) {
       current = PlayerState.falling;
@@ -164,19 +161,30 @@ class Player extends SpriteAnimationGroupComponent with HasGameRef<MyGame> {
     }
   }
 
-  SpriteAnimation buildSequenceAnimation({
-    required String path,
-    required int amount,
-    double? stepTime,
-    double? textureSize,
-  }) {
-    return SpriteAnimation.fromFrameData(
-      gameRef.images.fromCache(path),
-      SpriteAnimationData.sequenced(
-        amount: amount,
-        stepTime: stepTime ?? this.stepTime,
-        textureSize: Vector2.all(textureSize ?? this.textureSize),
-      ),
-    );
+  /// Call when player is hurt (e.g. by hazard). Triggers hit state and optional respawn.
+  void hit() {
+    if (_hitInvincibleUntil > 0) return;
+    _hitInvincibleUntil = 1.5;
+    current = PlayerState.hit;
+    velocity.setZero();
+    // Respawn after a short delay (handled in update: reset position and state)
+    Future.delayed(const Duration(milliseconds: 800), () {
+      if (!isMounted) return;
+      position.setFrom(_spawnPosition ?? position);
+      velocity.setZero();
+      current = PlayerState.idle;
+    });
+  }
+
+  /// Call when player dies (e.g. fall in pit). Respawn at spawn point.
+  void die() {
+    current = PlayerState.dead;
+    velocity.setZero();
+    Future.delayed(const Duration(milliseconds: 1000), () {
+      if (!isMounted) return;
+      position.setFrom(_spawnPosition ?? position);
+      velocity.setZero();
+      current = PlayerState.idle;
+    });
   }
 }
