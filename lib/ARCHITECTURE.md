@@ -1,5 +1,14 @@
 # Game Architecture – What Each Part Does
 
+## Separation: character vs logic
+
+- **Character** (`lib/actor/character.dart`) = **appearance only**: sprite paths, frame counts, loading images, building animations. No movement or input.
+- **Player** (`lib/actor/player.dart`) = **logic only**: position, velocity, gravity, input, ground, direction, which animation state to show. No sprite paths or frame data.
+
+Level creates `Player(character: Character.from(PlayerCharacter.ninjaFrog))`; Player uses the Character in `onLoad()` to get its animations, then only updates position/state.
+
+---
+
 ## File structure (one component per file)
 
 See **CONCEPTS.md** for what position, velocity, gravity, Vector2, scale, groundY, etc. mean and how they are used.
@@ -8,11 +17,12 @@ See **CONCEPTS.md** for what position, velocity, gravity, Vector2, scale, ground
 |------|----------|
 | **lib/main.dart** | App entry: `main()`, fullscreen/landscape, `runApp(GameWidget(game: MyGame()))`. |
 | **lib/game/my_game.dart** | `MyGame` (FlameGame), `createWorldAndCamera()`, `worldAndCamera`, `startLevelId`. |
-| **lib/levels/level.dart** | `Level` (World): loads Tiled map, spawns Player from object layer. |
-| **lib/actor/player.dart** | `Player` component: movement, gravity, input, animations. |
+| **lib/levels/level.dart** | `Level` (World): loads Tiled map, spawns Player from object layer (passes Character). |
+| **lib/actor/player.dart** | `Player` component: movement, gravity, input, animation state. **Logic only**; appearance from Character. |
+| **lib/actor/character.dart** | `Character`: sprite paths, frame data, loadImages(), buildAnimations(), presets (ninjaFrog, pinkMan, etc.). **Appearance only**. |
 | **lib/actor/player_state.dart** | `PlayerState` enum (idle, running, jumping, etc.). |
 | **lib/actor/player_direction.dart** | `PlayerDirection` enum (left, right). |
-| **lib/actor/player_character.dart** | `PlayerCharacter` enum (ninjaFrog, pinkMan, etc.). |
+| **lib/actor/player_character.dart** | `PlayerCharacter` enum (ninjaFrog, pinkMan, etc.); used with `Character.from()`. |
 
 ---
 
@@ -74,40 +84,53 @@ main()  →  GameWidget(game: MyGame())
 
 ---
 
-## 4. `actor/player.dart` – The player character
+## 4. `actor/player.dart` – Player logic (movement, input, state)
 
 | What | Role |
 |------|------|
-| **PlayerState** | Enum: idle, running, jumping, falling, etc. Used to choose which animation plays and for game logic (e.g. “can jump only when not dead”). |
-| **PlayerCharacter** | Enum of preset asset paths (Ninja Frog, Pink Man, etc.). Used in the constructor to choose which character’s sprites to load. |
-| **Player** | Extends **SpriteAnimationGroupComponent**: one component that can show different sprite animations and switch between them (e.g. idle vs run). **HasGameRef<MyGame>** gives access to the game (e.g. to use `gameRef.images`). |
+| **Player** | Extends **SpriteAnimationGroupComponent**; uses **HasGameReference<MyGame>** for `game.images`. **Logic only**: position, velocity, gravity, input, groundY, direction, and which animation state is current. |
+| **Character** | Passed in constructor (e.g. `Character.ninjaFrog()` or `Character.from(PlayerCharacter.ninjaFrog)`). Player does not know sprite paths or frame counts; it calls `character.loadImages()` and `character.buildAnimations()` in `onLoad()` and then only sets `current` to a PlayerState. |
 
 **Player responsibilities**
 
-- **Position** – Set in constructor via `super(position: ...)`. Where the player spawns or is placed in the world.
-- **Character** – Which sprite folder to use (e.g. Ninja Frog). Decides `_basePath` for loading images.
-- **Animations** – In `onLoad()`: load the sprite sheets for that character, then build one **SpriteAnimation** per **PlayerState** (idle, run, jump, etc.) and fill the `animations` map. Set `current = PlayerState.idle` so the right animation is shown.
-- **buildSequenceAnimation()** – Generic helper: given path, frame count, step time, and texture size, builds a single **SpriteAnimation** from a row of frames. Used for every state; reusable for other characters or sprites.
+- **Position** – Set in constructor; updated each frame by `position += velocity * dt`.
+- **Velocity** – Updated by input (left/right), jump, and gravity; then applied to position.
+- **groundY** – Set by Level (e.g. bottom of map); used to land and allow jump again.
+- **Direction** – Left/right from input; applied as `scale.x = ±1`.
+- **Animation state** – Chooses `current` (idle, running, jumping, falling) from velocity; the actual sprites come from the **Character**'s built animations.
 
-**Logic split**
+**What Player does not do**
 
-- **Level** – *where* the player is created (position from Tiled, which character to use).
-- **Player** – *how* it looks (which sprites, which animation per state) and *how* animations are built (generic sequence builder). Gameplay logic (movement, jump, state changes) would go in **Player** later (e.g. in `update(dt)` or input handlers).
+- Does not store sprite paths, frame counts, or texture size; those live in **Character**.
+- Does not build SpriteAnimation by hand; Character does that.
 
 ---
 
-## 5. `actor/player_*.dart` – Player enums (state, direction, character)
+## 5. `actor/character.dart` – Character appearance (sprites, animations)
+
+| What | Role |
+|------|------|
+| **Character** | Holds basePath, textureSize, stepTime, and a map of PlayerState → (file, frames). |
+| **loadImages(images)** | Loads all sprite sheets for this character into Flame's image cache. |
+| **buildAnimations(images)** | Returns Map<PlayerState, SpriteAnimation>; used by Player to fill its `animations` and set `current`. |
+| **Presets** | `Character.ninjaFrog()`, `pinkMan()`, `virtualGuy()`, `maskDude()`. |
+| **Character.from(PlayerCharacter)** | Returns the matching Character for the enum (e.g. for Level: `Character.from(PlayerCharacter.ninjaFrog)`). |
+
+**When adding a new character** – Add a preset in Character (and optionally a value in PlayerCharacter enum), then in Level use `Player(character: Character.from(PlayerCharacter.newValue))` or `Character.newPreset()`.
+
+---
+
+## 6. `actor/player_*.dart` – Player enums (state, direction, character)
 
 | File | Role |
 |------|------|
 | **player_state.dart** | `PlayerState` enum: which animation (idle, run, jump, fall, etc.). |
 | **player_direction.dart** | `PlayerDirection` enum: left / right (for sprite flip). |
-| **player_character.dart** | `PlayerCharacter` enum: which sprite set (Ninja Frog, Pink Man, etc.). |
-| **player.dart** | `Player` component: position, velocity, gravity, input, animations. |
+| **player_character.dart** | `PlayerCharacter` enum: which preset (Ninja Frog, Pink Man, etc.); use with `Character.from()`. |
 
 ---
 
-## 6. Flame component types (quick reference)
+## 7. Flame component types (quick reference)
 
 | Component | Purpose |
 |-----------|--------|
@@ -120,10 +143,10 @@ main()  →  GameWidget(game: MyGame())
 
 ---
 
-## 7. Where to put new logic
+## 8. Where to put new logic
 
 - **New level / new map** – New class like `Level` (or same class with different map path), load different `.tmx`, add to world.
 - **New spawn type** – In Level’s object loop, add another `case 'Enemy': add(Enemy(position: ...));`.
-- **Player movement / input** – In **Player**: override `update(dt)`, read input (e.g. from `gameRef.keyboard` or a custom input manager), change `position` and set `current = PlayerState.running` (or jump, fall, etc.).
-- **New character** – Add a new value to **PlayerCharacter** with the right path; use it in Level when creating `Player(character: PlayerCharacter.pinkMan)`.
-- **New animation state** – Add a state to **PlayerState**, add an entry in **Player**’s `animationData` map, and set `current` from your movement/logic.
+- **Player movement / input** – In **Player**: already in `update(dt)` via _applyInput, _applyGravity, _applyMovement, _applyGround, _updateDirection, _updateAnimationState.
+- **New character** – Add a preset in **Character** (and optionally to **PlayerCharacter**); in Level use `Player(character: Character.from(PlayerCharacter.pinkMan))` or `Character.pinkMan()`.
+- **New animation state** – Add a state to **PlayerState**, add an entry in **Character** animationData (and in each preset that needs it), and set `current` from Player logic (e.g. in _updateAnimationState).

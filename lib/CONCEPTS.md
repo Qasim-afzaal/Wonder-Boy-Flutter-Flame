@@ -2,6 +2,8 @@
 
 Plain-language explanation of the main terms used in the code.
 
+**Architecture:** Appearance (sprites, animations) lives in **Character** (`lib/actor/character.dart`); movement and input logic live in **Player** (`lib/actor/player.dart`). See ARCHITECTURE.md.
+
 ---
 
 ## Position (`position` / `Vector2`)
