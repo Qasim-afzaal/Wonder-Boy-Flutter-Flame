@@ -1,6 +1,7 @@
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 import 'package:flame_app/levels/level.dart';
+import 'package:flame_app/game/level_list.dart';
 import 'package:flutter/material.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -13,10 +14,11 @@ import 'package:flutter/material.dart';
 //   they exist from frame 1 (avoids "camera not initialized" error).
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Level to load at start. Change to 'lvl-2', etc. to start on another map.
-const String startLevelId = 'lvl-01';
+/// Level to load at start.
+final String startLevelId = levelIds.first;
 
-/// Builds one Level (world) and one Camera that looks at it. Called once at startup.
+/// World is the Level so the camera sees it directly (original working setup).
+/// Next level is done by reloading Level content, not replacing the world.
 (Level, CameraComponent) createWorldAndCamera(String levelId) {
   final world = Level(levelId: levelId);
   final camera = CameraComponent.withFixedResolution(
@@ -30,7 +32,7 @@ const String startLevelId = 'lvl-01';
 /// Single level + camera instance. MyGame passes these into FlameGame.
 final worldAndCamera = createWorldAndCamera(startLevelId);
 
-class MyGame extends FlameGame {
+class MyGame extends FlameGame<Level> {
   MyGame()
       : super(
           world: worldAndCamera.$1,
@@ -46,4 +48,19 @@ class MyGame extends FlameGame {
     await images.loadAllImages();
     camera.viewfinder.anchor = Anchor.topLeft;
   }
+
+  /// Loads a level by ID. Reloads the current world (Level) content.
+  Future<void> loadLevel(String levelId) async {
+    await world.loadLevel(levelId);
+  }
+
+  /// Loads the next level in [levelIds], or does nothing if already at last level.
+  Future<void> loadNextLevel() async {
+    final nextId = nextLevelId(world.levelId);
+    if (nextId != null) {
+      await loadLevel(nextId);
+    }
+  }
+
+  bool get isGameComplete => nextLevelId(world.levelId) == null;
 }
