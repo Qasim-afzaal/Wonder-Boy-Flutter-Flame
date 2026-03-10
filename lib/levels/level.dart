@@ -1,6 +1,8 @@
 import 'package:flame/components.dart';
 import 'package:flame_app/actor/player.dart';
 import 'package:flame_app/actor/player_character.dart';
+import 'package:flame_app/actor/character.dart';
+import 'package:flame_app/levels/goal.dart';
 import 'package:flame_tiled/flame_tiled.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -16,41 +18,71 @@ import 'package:flame_tiled/flame_tiled.dart';
 
 class Level extends World {
   Level({
-    this.levelId = 'lvl-01',
+    String levelId = 'lvl-01',
     this.tileSize = 16,
     this.spawnLayerName = 'SponPlayer',
-  });
+  }) : _levelId = levelId;
 
-  final String levelId;
+  String _levelId;
+  String get levelId => _levelId;
   final double tileSize;
   final String spawnLayerName;
 
-  late final TiledComponent _tileMap;
+  TiledComponent? _tileMap;
 
-  String get _mapFileName => '$levelId.tmx';
+  String _mapFileName(String id) => '$id.tmx';
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
+    await _loadContent(_levelId);
+  }
+
+  /// Load (or reload) level content by id. Used for first load and for next level.
+  Future<void> _loadContent(String id) async {
+    _levelId = id;
+    removeAll(children);
 
     _tileMap = await TiledComponent.load(
-      _mapFileName,
+      _mapFileName(id),
       Vector2.all(tileSize),
     );
-    add(_tileMap);
+    add(_tileMap!);
 
-    final spawnLayer = _tileMap.tileMap.getLayer<ObjectGroup>(spawnLayerName);
+    final mapHeight = _tileMap!.tileMap.map.height;
+    final mapWidth = _tileMap!.tileMap.map.width;
+    final groundY = mapHeight * tileSize;
+
+    ObjectGroup? spawnLayer = _tileMap!.tileMap.getLayer<ObjectGroup>(spawnLayerName);
+    spawnLayer ??= _tileMap!.tileMap.getLayer<ObjectGroup>('sponPoint');
     for (final object in spawnLayer?.objects ?? []) {
       switch (object.class_) {
         case 'Player':
           final player = Player(
             position: Vector2(object.x, object.y),
-            character: PlayerCharacter.ninjaFrog,
+            character: Character.from(PlayerCharacter.ninjaFrog),
           );
-          player.groundY = _tileMap.tileMap.map.height * tileSize;
+          player.groundY = groundY;
           add(player);
           break;
       }
     }
+
+    Vector2? goalPosition;
+    for (final name in ['Objects', spawnLayerName]) {
+      final layer = _tileMap!.tileMap.getLayer<ObjectGroup>(name);
+      for (final object in layer?.objects ?? []) {
+        if (object.class_ == 'Goal') {
+          goalPosition = Vector2(object.x, object.y + (object.height));
+          break;
+        }
+      }
+      if (goalPosition != null) break;
+    }
+    goalPosition ??= Vector2(mapWidth * tileSize - 50, groundY);
+    add(Goal(position: goalPosition));
   }
+
+  /// Reload this level with a new id (for next level). Keeps same world/camera.
+  Future<void> loadLevel(String id) => _loadContent(id);
 }
