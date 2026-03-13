@@ -23,6 +23,10 @@ See **CONCEPTS.md** for what position, velocity, gravity, Vector2, scale, ground
 | **lib/actor/player_state.dart** | `PlayerState` enum (idle, running, jumping, etc.). |
 | **lib/actor/player_direction.dart** | `PlayerDirection` enum (left, right). |
 | **lib/actor/player_character.dart** | `PlayerCharacter` enum (ninjaFrog, pinkMan, etc.); used with `Character.from()`. |
+| **lib/game/game_state.dart** | `GameState`: lives, score; reset for new game / game over. |
+| **lib/overlays/hud.dart** | `HudComponent`: displays lives and score on screen. |
+| **lib/levels/hazard.dart** | `Hazard`: obstacle; contact hurts player (loses life). |
+| **lib/levels/fruit.dart** | `Fruit`: collectible; contact adds score and removes fruit. |
 
 ---
 
