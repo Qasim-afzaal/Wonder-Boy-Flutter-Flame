@@ -3,6 +3,9 @@ import 'package:flame_app/actor/player.dart';
 import 'package:flame_app/actor/player_character.dart';
 import 'package:flame_app/actor/character.dart';
 import 'package:flame_app/levels/goal.dart';
+import 'package:flame_app/levels/hazard.dart';
+import 'package:flame_app/levels/fruit.dart';
+import 'package:flame_app/game/my_game.dart';
 import 'package:flame_tiled/flame_tiled.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -60,7 +63,7 @@ class Level extends World {
         case 'Player':
           final player = Player(
             position: Vector2(object.x, object.y),
-            character: Character.from(PlayerCharacter.ninjaFrog),
+            character: Character.from(PlayerCharacter.pinkMan),
           );
           player.groundY = groundY;
           add(player);
@@ -81,6 +84,46 @@ class Level extends World {
     }
     goalPosition ??= Vector2(mapWidth * tileSize - 50, groundY);
     add(Goal(position: goalPosition));
+
+    // Hazards and fruits from object layers (Objects, SponPlayer, sponPoint, Hazards)
+    final game = findGame() as MyGame?;
+    Sprite? fruitSprite;
+    if (game != null) {
+      try {
+        await game.images.load('Items/Fruits/Apple.png');
+        fruitSprite = Sprite(game.images.fromCache('Items/Fruits/Apple.png'));
+      } catch (_) {}
+    }
+    var hazardCount = 0;
+    for (final name in ['Hazards', 'Objects', spawnLayerName, 'sponPoint']) {
+      final layer = _tileMap!.tileMap.getLayer<ObjectGroup>(name);
+      if (layer == null) continue;
+      for (final object in layer.objects) {
+        if (object.class_ == 'Hazard') {
+          hazardCount++;
+          add(Hazard(
+            position: Vector2(object.x, object.y),
+            size: Vector2(object.width, object.height),
+          ));
+        }
+        if (object.class_ == 'Fruit' && fruitSprite != null) {
+          final points = object.properties.byName['points']?.value as int? ?? 10;
+          add(Fruit(
+            position: Vector2(object.x + object.width / 2, object.y + object.height / 2),
+            sprite: fruitSprite,
+            points: points,
+            size: Vector2(object.width, object.height),
+          ));
+        }
+      }
+    }
+    // Default obstacle if none in Tiled: spike block near the end
+    if (hazardCount == 0) {
+      add(Hazard(
+        position: Vector2(mapWidth * tileSize * 0.55, groundY - 32),
+        size: Vector2(32, 32),
+      ));
+    }
   }
 
   /// Reload this level with a new id (for next level). Keeps same world/camera.
