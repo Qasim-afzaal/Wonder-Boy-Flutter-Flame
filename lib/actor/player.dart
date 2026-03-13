@@ -2,6 +2,8 @@ import 'package:flame/components.dart';
 import 'package:flame/collisions.dart';
 import 'package:flame_app/game/my_game.dart';
 import 'package:flame_app/levels/goal.dart';
+import 'package:flame_app/levels/hazard.dart';
+import 'package:flame_app/levels/fruit.dart';
 import 'package:flame_app/actor/player_state.dart';
 import 'package:flame_app/actor/player_direction.dart';
 import 'package:flame_app/actor/character.dart';
@@ -72,6 +74,18 @@ class Player extends SpriteAnimationGroupComponent
     super.onCollisionStart(intersectionPoints, other);
     if (other is Goal) {
       game.loadNextLevel();
+      return;
+    }
+    if (other is Hazard) {
+      game.gameState.lives--;
+      hit();
+      if (game.gameState.isGameOver) {
+        game.gameOver();
+      }
+      return;
+    }
+    if (other is Fruit) {
+      other.collect(this);
     }
   }
 
@@ -86,9 +100,13 @@ class Player extends SpriteAnimationGroupComponent
     _applyMovement(dt);
     _applyGround();
     if (_hitInvincibleUntil > 0) _hitInvincibleUntil -= dt;
-    // Fall off map -> die and respawn
+    // Fall off map -> die, lose life, respawn or game over
     if (groundY != null && position.y > groundY! + 200) {
+      game.gameState.lives--;
       die();
+      if (game.gameState.isGameOver) {
+        game.gameOver();
+      }
     }
     _updateDirection();
     _updateAnimationState();
