@@ -3,13 +3,14 @@
         "height": 4300,
         "width": 2
     },
-    "activeFile": "lvl-01.tmx",
+    "activeFile": "lvl-2.tmx",
     "expandedProjectPaths": [
         "."
     ],
     "fileStates": {
         "Terrain (16x16).tsx": {
-            "dynamicWrapping": false
+            "dynamicWrapping": false,
+            "scaleInDock": 0.96
         },
         "lvl-01.tmx": {
             "expandedObjectLayers": [
@@ -22,9 +23,17 @@
                 "y": 425.9755734286565
             }
         },
+        "lvl-2.tmx": {
+            "scale": 0.726,
+            "selectedLayer": 1,
+            "viewCenter": {
+                "x": 338.1542699724518,
+                "y": 258.2644628099174
+            }
+        },
         "pixel_adventure.tsx": {
             "dynamicWrapping": false,
-            "scaleInDock": 0.8715,
+            "scaleInDock": 0.96,
             "scaleInEditor": 1
         }
     },
@@ -36,12 +45,14 @@
     "map.width": 40,
     "openFiles": [
         "pixel_adventure.tsx",
-        "lvl-01.tmx"
+        "lvl-01.tmx",
+        "lvl-2.tmx"
     ],
     "project": "untitled.tiled-project",
     "recentFiles": [
         "pixel_adventure.tsx",
-        "lvl-01.tmx"
+        "lvl-01.tmx",
+        "lvl-2.tmx"
     ],
     "tileset.lastUsedFormat": "tsx",
     "tileset.tileSize": {
