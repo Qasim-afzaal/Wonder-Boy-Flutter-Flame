@@ -2,6 +2,8 @@ import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 import 'package:flame_app/levels/level.dart';
 import 'package:flame_app/game/level_list.dart';
+import 'package:flame_app/game/game_state.dart';
+import 'package:flame_app/overlays/hud.dart';
 import 'package:flutter/material.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -39,6 +41,8 @@ class MyGame extends FlameGame<Level> {
           camera: worldAndCamera.$2,
         );
 
+  final GameState gameState = GameState();
+
   @override
   Color backgroundColor() => const Color(0xFF101012);
 
@@ -47,11 +51,19 @@ class MyGame extends FlameGame<Level> {
     await super.onLoad();
     await images.loadAllImages();
     camera.viewfinder.anchor = Anchor.topLeft;
+    camera.add(HudComponent());
+    gameState.resetForNewGame();
   }
 
   /// Loads a level by ID. Reloads the current world (Level) content.
   Future<void> loadLevel(String levelId) async {
     await world.loadLevel(levelId);
+  }
+
+  /// Called when lives reach 0. Resets lives and reloads current level.
+  Future<void> gameOver() async {
+    gameState.resetLivesOnly();
+    await loadLevel(world.levelId);
   }
 
   /// Loads the next level in [levelIds], or does nothing if already at last level.
